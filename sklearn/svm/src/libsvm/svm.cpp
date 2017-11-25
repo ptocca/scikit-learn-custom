@@ -1417,6 +1417,7 @@ public:
 		int start, j;
 		if((start = cache->get_data(i,&data,len)) < len)
 		{
+#pragma omp parallel for private(i) schedule(guided)
 			for(j=start;j<len;j++)
 				data[j] = (Qfloat)(y[i]*y[j]*(this->*kernel_function)(i,j));
 		}
@@ -1466,6 +1467,7 @@ public:
 		int start, j;
 		if((start = cache->get_data(i,&data,len)) < len)
 		{
+#pragma omp parallel for private(i) schedule(guided)
 			for(j=start;j<len;j++)
 				data[j] = (Qfloat)(this->*kernel_function)(i,j);
 		}
@@ -1532,6 +1534,7 @@ public:
 		int j, real_i = index[i];
 		if(cache->get_data(real_i,&data,l) < l)
 		{
+#pragma omp parallel for private(j) schedule(guided)
 			for(j=0;j<l;j++)
 				data[j] = (Qfloat)(this->*kernel_function)(real_i,j);
 		}
@@ -2795,6 +2798,7 @@ double PREFIX(predict_values)(const PREFIX(model) *model, const PREFIX(node) *x,
 		double *sv_coef = model->sv_coef[0];
 		double sum = 0;
 		
+#pragma omp parallel for private(i) reduction(+:sum) schedule(guided)
 		for(i=0;i<model->l;i++)
 #ifdef _DENSE_REP
                     sum += sv_coef[i] * NAMESPACE::Kernel::k_function(x,model->SV+i,model->param);
@@ -2815,6 +2819,7 @@ double PREFIX(predict_values)(const PREFIX(model) *model, const PREFIX(node) *x,
 		int l = model->l;
 		
 		double *kvalue = Malloc(double,l);
+#pragma omp parallel for private(i) schedule(guided)
 		for(i=0;i<l;i++)
 #ifdef _DENSE_REP
                     kvalue[i] = NAMESPACE::Kernel::k_function(x,model->SV+i,model->param);
