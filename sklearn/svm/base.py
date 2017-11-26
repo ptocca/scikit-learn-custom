@@ -21,7 +21,7 @@ from ..exceptions import ConvergenceWarning
 from ..exceptions import NotFittedError
 
 
-LIBSVM_IMPL = ['c_svc', 'nu_svc', 'one_class', 'epsilon_svr', 'nu_svr']
+LIBSVM_IMPL = ['c_svc', 'nu_svc', 'one_class', 'epsilon_svr', 'nu_svr', 'c_svc_l2']
 
 
 def _one_vs_one_coef(dual_coef, n_support, support_vectors):
@@ -68,12 +68,12 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
     # The order of these must match the integer values in LibSVM.
     # XXX These are actually the same in the dense case. Need to factor
     # this out.
-    _sparse_kernels = ["linear", "poly", "rbf", "sigmoid", "precomputed"]
+    _sparse_kernels = ["linear", "poly", "rbf", "sigmoid", "precomputed", "external"]
 
     @abstractmethod
     def __init__(self, impl, kernel, degree, gamma, coef0,
                  tol, C, nu, epsilon, shrinking, probability, cache_size,
-                 class_weight, verbose, max_iter, random_state):
+                 class_weight, verbose, max_iter, random_state, kernel_lib_name, kernel_lib_params):
 
         if impl not in LIBSVM_IMPL:  # pragma: no cover
             raise ValueError("impl should be one of %s, %s was given" % (
@@ -100,6 +100,8 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
         self.verbose = verbose
         self.max_iter = max_iter
         self.random_state = random_state
+        self.kernel_lib_name = kernel_lib_name
+        self.kernel_lib_params = kernel_lib_params
 
     @property
     def _pairwise(self):
@@ -193,7 +195,7 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
         # decision function. Use self._intercept_ and self._dual_coef_ internally.
         self._intercept_ = self.intercept_.copy()
         self._dual_coef_ = self.dual_coef_
-        if self._impl in ['c_svc', 'nu_svc'] and len(self.classes_) == 2:
+        if self._impl in ['c_svc', 'nu_svc','c_svc_l2'] and len(self.classes_) == 2:
             self.intercept_ *= -1
             self.dual_coef_ = -self.dual_coef_
 
@@ -251,7 +253,8 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
                 shrinking=self.shrinking, tol=self.tol,
                 cache_size=self.cache_size, coef0=self.coef0,
                 gamma=self._gamma, epsilon=self.epsilon,
-                max_iter=self.max_iter, random_seed=random_seed)
+                max_iter=self.max_iter, random_seed=random_seed,
+                kernel_lib_name=self.kernel_lib_name, kernel_lib_params=self.kernel_lib_params)
 
         self._warn_from_fit_status()
 
@@ -273,7 +276,7 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
                 self.C, self.class_weight_,
                 sample_weight, self.nu, self.cache_size, self.epsilon,
                 int(self.shrinking), int(self.probability), self.max_iter,
-                random_seed)
+                random_seed, self.kernel_lib_name.encode(), self.kernel_lib_params.encode())
 
         self._warn_from_fit_status()
 
@@ -330,7 +333,8 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
             self._dual_coef_, self._intercept_,
             self.probA_, self.probB_, svm_type=svm_type, kernel=kernel,
             degree=self.degree, coef0=self.coef0, gamma=self._gamma,
-            cache_size=self.cache_size)
+            cache_size=self.cache_size,
+            kernel_lib_name=self.kernel_lib_name.encode(), kernel_lib_params=self.kernel_lib_params.encode())
 
     def _sparse_predict(self, X):
         # Precondition: X is a csr_matrix of dtype np.float64.
@@ -352,7 +356,9 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
             self.degree, self._gamma, self.coef0, self.tol,
             C, self.class_weight_,
             self.nu, self.epsilon, self.shrinking,
-            self.probability, self.n_support_,
+            self.probability, 
+            self.kernel_lib_name.encode(),self.kernel_lib_params.encode(),
+            self.n_support_,
             self.probA_, self.probB_)
 
     def _compute_kernel(self, X):
@@ -430,7 +436,9 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
             self.degree, self._gamma, self.coef0, self.tol,
             self.C, self.class_weight_,
             self.nu, self.epsilon, self.shrinking,
-            self.probability, self.n_support_,
+            self.probability,
+            self.kernel_lib_name.encode(),self.kernel_lib_params.encode(), 
+            self.n_support_,
             self.probA_, self.probB_)
 
     def _validate_for_predict(self, X):
@@ -486,14 +494,16 @@ class BaseSVC(six.with_metaclass(ABCMeta, BaseLibSVM, ClassifierMixin)):
     @abstractmethod
     def __init__(self, impl, kernel, degree, gamma, coef0, tol, C, nu,
                  shrinking, probability, cache_size, class_weight, verbose,
-                 max_iter, decision_function_shape, random_state):
+                 max_iter, decision_function_shape, random_state, 
+                 kernel_lib_name, kernel_lib_params):
         self.decision_function_shape = decision_function_shape
         super(BaseSVC, self).__init__(
             impl=impl, kernel=kernel, degree=degree, gamma=gamma, coef0=coef0,
             tol=tol, C=C, nu=nu, epsilon=0., shrinking=shrinking,
             probability=probability, cache_size=cache_size,
             class_weight=class_weight, verbose=verbose, max_iter=max_iter,
-            random_state=random_state)
+            random_state=random_state,
+            kernel_lib_name=kernel_lib_name, kernel_lib_params=kernel_lib_params)
 
     def _validate_targets(self, y):
         y_ = column_or_1d(y, warn=True)

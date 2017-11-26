@@ -23,7 +23,7 @@
  * this case. We create a temporary array temp that collects non-zero
  * elements and after we just memcpy that to the proper array.
  *
- * Special care must be taken with indinces, since libsvm indices start
+ * Special care must be taken with indices, since libsvm indices start
  * at 1 and not at 0.
  *
  * Strictly speaking, the C standard does not require that structs are
@@ -58,7 +58,8 @@ struct svm_node *dense_to_libsvm (double *x, npy_intp *dims)
 void set_parameter(struct svm_parameter *param, int svm_type, int kernel_type, int degree,
 		double gamma, double coef0, double nu, double cache_size, double C,
 		double eps, double p, int shrinking, int probability, int nr_weight,
-		char *weight_label, char *weight, int max_iter, int random_seed)
+		char *weight_label, char *weight, int max_iter, int random_seed,
+		char *kernelLibName, char*kernelLibParams)
 {
     param->svm_type = svm_type;
     param->kernel_type = kernel_type;
@@ -77,6 +78,8 @@ void set_parameter(struct svm_parameter *param, int svm_type, int kernel_type, i
     param->gamma = gamma;
     param->max_iter = max_iter;
     param->random_seed = random_seed;
+    param->kernelLibName = kernelLibName;
+    param->kernelLibParams = kernelLibParams;
 }
 
 /*
@@ -146,7 +149,7 @@ struct svm_model *set_model(struct svm_parameter *param, int nr_class,
      * regression and one-class does not use nSV, label.
      * TODO: does this provoke memory leaks (we just malloc'ed them)?
      */
-    if (param->svm_type < 2) {
+    if (param->svm_type < 2 || param->svm_type==C_SVC_L2) {
         memcpy(model->nSV, nSV,     model->nr_class * sizeof(int));
         for(i=0; i < model->nr_class; i++)
             model->label[i] = i;

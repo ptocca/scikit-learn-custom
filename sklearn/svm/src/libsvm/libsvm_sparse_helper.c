@@ -44,7 +44,8 @@ struct svm_csr_node **csr_to_libsvm (double *values, int* indices, int* indptr, 
 struct svm_parameter * set_parameter(int svm_type, int kernel_type, int degree,
 		double gamma, double coef0, double nu, double cache_size, double C,
 		double eps, double p, int shrinking, int probability, int nr_weight,
-		char *weight_label, char *weight, int max_iter, int random_seed)
+		char *weight_label, char *weight, int max_iter, int random_seed,
+		char *kernelLibName, char*kernelLibParams)
 {
     struct svm_parameter *param;
     param = malloc(sizeof(struct svm_parameter));
@@ -66,6 +67,8 @@ struct svm_parameter * set_parameter(int svm_type, int kernel_type, int degree,
     param->gamma = gamma;
     param->max_iter = max_iter;
     param->random_seed = random_seed;
+    param->kernelLibName = kernelLibName;
+    param->kernelLibParams = kernelLibParams;
     return param;
 }
 
@@ -134,7 +137,7 @@ struct svm_csr_model *csr_set_model(struct svm_parameter *param, int nr_class,
     /*
      * regression and one-class does not use nSV, label.
      */
-    if (param->svm_type < 2) {
+    if (param->svm_type < 2 || param->svm_type==C_SVC_L2) {
         memcpy(model->nSV,   nSV,   model->nr_class * sizeof(int));
         for(i=0; i < model->nr_class; i++)
             model->label[i] = i;

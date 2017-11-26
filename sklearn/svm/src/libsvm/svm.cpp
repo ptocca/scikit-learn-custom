@@ -57,6 +57,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <float.h>
 #include <string.h>
 #include <stdarg.h>
+#include <dlfcn.h>
 #include "svm.h"
 
 #ifndef _LIBSVM_CPP
@@ -276,8 +277,14 @@ public:
 	virtual ~QMatrix() {}
 };
 
+
+extern "C" typedef double (PREFIX(custom_kernel_t))(const PREFIX(node) *px, const PREFIX(node) *py);
+
+
 class Kernel: public QMatrix {
 public:
+
+
 #ifdef _DENSE_REP
 	Kernel(int l, PREFIX(node) * x, const svm_parameter& param);
 #else
@@ -294,6 +301,7 @@ public:
 		swap(x[i],x[j]);
 		if(x_square) swap(x_square[i],x_square[j]);
 	}
+
 protected:
 
 	double (Kernel::*kernel_function)(int i, int j) const;
@@ -311,6 +319,8 @@ private:
 	const int degree;
 	const double gamma;
 	const double coef0;
+	static PREFIX(custom_kernel_t)* PREFIX(custom_kernel);
+
 
 	static double dot(const PREFIX(node) *px, const PREFIX(node) *py);
 #ifdef _DENSE_REP
@@ -341,7 +351,16 @@ private:
 		return x[i][(int)(x[j][0].value)].value;
 #endif
 	}
+	double kernel_external(int i, int j) const {
+#ifdef _DENSE_REP
+		return Kernel::PREFIX(custom_kernel)(&x[i], &x[j]);
+#else
+		return Kernel::PREFIX(custom_kernel)(x[i], x[j]);
+#endif
+	}
 };
+
+PREFIX(custom_kernel_t)* Kernel::PREFIX(custom_kernel) = 0;
 
 #ifdef _DENSE_REP
 Kernel::Kernel(int l, PREFIX(node) * x_, const svm_parameter& param)
@@ -367,6 +386,26 @@ Kernel::Kernel(int l, PREFIX(node) * const * x_, const svm_parameter& param)
 			break;
 		case PRECOMPUTED:
 			kernel_function = &Kernel::kernel_precomputed;
+			break;
+		case EXTERNAL:
+			void *lib_handle = dlopen(param.kernelLibName, RTLD_NOW);
+			if (lib_handle == NULL) {
+				printf("Failed loading lib in Initializer\n");
+				exit(1);
+			}
+			void (*init)(char *) = (void(*)(char *))dlsym(lib_handle,"init");
+			if (init != NULL)
+				init(param.kernelLibParams);
+#ifdef _DENSE_REP
+			Kernel::PREFIX(custom_kernel) = (PREFIX(custom_kernel_t)*)dlsym(lib_handle,"kernel");
+#else
+			Kernel::PREFIX(custom_kernel) = (PREFIX(custom_kernel_t)*)dlsym(lib_handle,"csr_kernel");
+#endif
+			if (Kernel::PREFIX(custom_kernel)==NULL) {
+				printf("Missing kernel function in kernel library\n");
+				exit(1);
+			}
+			kernel_function = &Kernel::kernel_external;
 			break;
 	}
 
@@ -504,6 +543,9 @@ double Kernel::k_function(const PREFIX(node) *x, const PREFIX(node) *y,
 			return x[(int)(y->value)].value;
 #endif
                     }
+		case EXTERNAL:
+			return Kernel::PREFIX(custom_kernel)(x, y);
+
 		default:
 			return 0;  // Unreachable 
 	}
@@ -1401,14 +1443,23 @@ double Solver_NU::calculate_rho()
 class SVC_Q: public Kernel
 { 
 public:
+
 	SVC_Q(const PREFIX(problem)& prob, const svm_parameter& param, const schar *y_)
 	:Kernel(prob.l, prob.x, param)
 	{
 		clone(y,y_,prob.l);
 		cache = new Cache(prob.l,(long int)(param.cache_size*(1<<20)));
 		QD = new double[prob.l];
-		for(int i=0;i<prob.l;i++)
-			QD[i] = (this->*kernel_function)(i,i);
+		this->C = param.C;
+		this->svm_type = param.svm_type;
+		if (param.svm_type==C_SVC_L2) {
+			for(int i=0;i<prob.l;i++)
+				QD[i] = (this->*kernel_function)(i,i)+0.5/param.C;
+
+		} else {
+			for(int i=0;i<prob.l;i++)
+				QD[i] = (this->*kernel_function)(i,i);
+		}
 	}
 	
 	Qfloat *get_Q(int i, int len) const
@@ -1417,9 +1468,14 @@ public:
 		int start, j;
 		if((start = cache->get_data(i,&data,len)) < len)
 		{
-#pragma omp parallel for private(i) schedule(guided)
+#pragma omp parallel for private(j) schedule(guided)
 			for(j=start;j<len;j++)
 				data[j] = (Qfloat)(y[i]*y[j]*(this->*kernel_function)(i,j));
+
+			if (svm_type==C_SVC_L2) {
+				if (i >= start && i < len)
+					data[i] += 0.5/C;
+			}
 		}
 		return data;
 	}
@@ -1447,6 +1503,8 @@ private:
 	schar *y;
 	Cache *cache;
 	double *QD;
+	double C;
+	int svm_type;    // needed to distinguish between L1 and L2
 };
 
 class ONE_CLASS_Q: public Kernel
@@ -1456,9 +1514,17 @@ public:
 	:Kernel(prob.l, prob.x, param)
 	{
 		cache = new Cache(prob.l,(long int)(param.cache_size*(1<<20)));
+		this->C = param.C;
+		this->svm_type = param.svm_type;
 		QD = new double[prob.l];
-		for(int i=0;i<prob.l;i++)
-			QD[i] = (this->*kernel_function)(i,i);
+		if (param.svm_type==ONE_CLASS_L2) {                         // Not supported yet
+			for(int i=0;i<prob.l;i++)
+				QD[i] = (this->*kernel_function)(i,i)+0.5/param.C;
+
+		} else {
+			for(int i=0;i<prob.l;i++)
+				QD[i] = (this->*kernel_function)(i,i);
+		}
 	}
 	
 	Qfloat *get_Q(int i, int len) const
@@ -1467,9 +1533,14 @@ public:
 		int start, j;
 		if((start = cache->get_data(i,&data,len)) < len)
 		{
-#pragma omp parallel for private(i) schedule(guided)
+#pragma omp parallel for private(j) schedule(guided)
 			for(j=start;j<len;j++)
 				data[j] = (Qfloat)(this->*kernel_function)(i,j);
+
+			if (svm_type==ONE_CLASS_L2) {                    // Not supported yet
+				if (i >= start && i < len)
+					data[i] += 0.5/C;
+			}
 		}
 		return data;
 	}
@@ -1494,6 +1565,9 @@ public:
 private:
 	Cache *cache;
 	double *QD;
+	double C;
+	int svm_type;    // needed to distinguish between L1 and L2
+
 };
 
 class SVR_Q: public Kernel
@@ -1586,6 +1660,7 @@ static void solve_c_svc(
 
 	int i;
 
+
 	for(i=0;i<l;i++)
 	{
 		alpha[i] = 0;
@@ -1593,19 +1668,23 @@ static void solve_c_svc(
 		if(prob->y[i] > 0)
 		{
 			y[i] = +1;
-			C[i] = prob->W[i]*Cp;
+			if (param->svm_type==C_SVC_L2) C[i] = INF;
+			else                           C[i] = prob->W[i]*Cp;
 		}
 		else
 		{
 			y[i] = -1;
-			C[i] = prob->W[i]*Cn;
+			if (param->svm_type==C_SVC_L2) C[i] = INF;
+			else                           C[i] = prob->W[i]*Cn;
 		}
 	}
 
 	Solver s;
 	s.Solve(l, SVC_Q(*prob,*param,y), minus_ones, y,
 		alpha, C, param->eps, si, param->shrinking,
-                param->max_iter);
+				param->max_iter);
+
+
 
         /*
 	double sum_alpha=0;
@@ -1837,6 +1916,7 @@ static decision_function svm_train_one(
 	switch(param->svm_type)
 	{
  		case C_SVC:
+ 		case C_SVC_L2:
 			si.upper_bound = Malloc(double,prob->l); 
  			solve_c_svc(prob,param,alpha,&si,Cp,Cn);
  			break;
@@ -2996,7 +3076,8 @@ const char *PREFIX(check_parameter)(const PREFIX(problem) *prob, const svm_param
 	   svm_type != NU_SVC &&
 	   svm_type != ONE_CLASS &&
 	   svm_type != EPSILON_SVR &&
-	   svm_type != NU_SVR)
+	   svm_type != NU_SVR &&
+	   svm_type != C_SVC_L2)
 		return "unknown svm type";
 	
 	// kernel_type, degree
@@ -3006,7 +3087,8 @@ const char *PREFIX(check_parameter)(const PREFIX(problem) *prob, const svm_param
 	   kernel_type != POLY &&
 	   kernel_type != RBF &&
 	   kernel_type != SIGMOID &&
-	   kernel_type != PRECOMPUTED)
+	   kernel_type != PRECOMPUTED &&
+	   kernel_type != EXTERNAL)
 		return "unknown kernel type";
 
 	if(param->gamma < 0)

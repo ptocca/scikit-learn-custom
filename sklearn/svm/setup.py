@@ -21,7 +21,8 @@ def configuration(parent_package='', top_path=None):
                                 join('src', 'libsvm', 'svm.h')],
                        # Force C++ linking in case gcc is picked up instead
                        # of g++ under windows with some versions of MinGW
-                       extra_link_args=['-lstdc++'],
+                       extra_compile_args=["-fopenmp"],
+                       extra_link_args=['-lgomp','-lstdc++'],
                        )
 
     libsvm_sources = ['libsvm.pyx']
@@ -36,6 +37,8 @@ def configuration(parent_package='', top_path=None):
                                        join('src', 'libsvm')],
                          libraries=['libsvm-skl'],
                          depends=libsvm_depends,
+                         extra_compile_args=["-fopenmp"],
+                         extra_link_args=["-lgomp"],
                          )
 
     # liblinear module
@@ -69,6 +72,8 @@ def configuration(parent_package='', top_path=None):
                          sources=libsvm_sparse_sources,
                          include_dirs=[numpy.get_include(),
                                        join("src", "libsvm")],
+                         extra_compile_args=["-fopenmp"],
+                         extra_link_args=["-lgomp"],
                          depends=[join("src", "libsvm", "svm.h"),
                                   join("src", "libsvm",
                                        "libsvm_sparse_helper.c")])

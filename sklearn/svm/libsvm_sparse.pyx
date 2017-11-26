@@ -32,7 +32,7 @@ cdef extern from "libsvm_sparse_helper.c":
     svm_parameter *set_parameter (int , int , int , double, double ,
                                   double , double , double , double,
                                   double, int, int, int, char *, char *, int,
-                                  int)
+                                  int, char *, char *)
     void copy_sv_coef   (char *, svm_csr_model *)
     void copy_support   (char *, svm_csr_model *)
     void copy_intercept (char *, svm_csr_model *, np.npy_intp *)
@@ -78,7 +78,9 @@ def libsvm_sparse_train ( int n_features,
                      np.ndarray[np.float64_t, ndim=1, mode='c'] sample_weight,
                      double nu, double cache_size, double p, int
                      shrinking, int probability, int max_iter,
-                     int random_seed):
+                     int random_seed,
+		     char* kernel_lib_name="",
+		     char* kernel_lib_params=""):
     """
     Wrap svm_train from libsvm using a scipy.sparse.csr matrix
 
@@ -132,7 +134,7 @@ def libsvm_sparse_train ( int n_features,
                           nu, cache_size, C, eps, p, shrinking,
                           probability, <int> class_weight.shape[0],
                           class_weight_label.data, class_weight.data, max_iter,
-                          random_seed)
+                          random_seed, kernel_lib_name, kernel_lib_params)
 
     # check parameters
     if (param == NULL or problem == NULL):
@@ -226,6 +228,7 @@ def libsvm_sparse_predict (np.ndarray[np.float64_t, ndim=1, mode='c'] T_data,
                             np.ndarray[np.float64_t, ndim=1] class_weight,
                             double nu, double p, int
                             shrinking, int probability,
+                            char * kernel_lib_name, char * kernel_lib_params,
                             np.ndarray[np.int32_t, ndim=1, mode='c'] nSV,
                             np.ndarray[np.float64_t, ndim=1, mode='c'] probA,
                             np.ndarray[np.float64_t, ndim=1, mode='c'] probB):
@@ -263,7 +266,9 @@ def libsvm_sparse_predict (np.ndarray[np.float64_t, ndim=1, mode='c'] T_data,
                           C, eps, p, shrinking,
                           probability, <int> class_weight.shape[0], class_weight_label.data,
                           class_weight.data, -1,
-                          -1) # random seed has no effect on predict either
+                          -1, # random seed has no effect on predict either
+                          kernel_lib_name,
+                          kernel_lib_params)
 
     model = csr_set_model(param, <int> nSV.shape[0], SV_data.data,
                           SV_indices.shape, SV_indices.data,
@@ -300,6 +305,7 @@ def libsvm_sparse_predict_proba(
     eps, double C,
     np.ndarray[np.float64_t, ndim=1] class_weight,
     double nu, double p, int shrinking, int probability,
+    char*  kernel_lib_name, char* kernel_lib_params,
     np.ndarray[np.int32_t, ndim=1, mode='c'] nSV,
     np.ndarray[np.float64_t, ndim=1, mode='c'] probA,
     np.ndarray[np.float64_t, ndim=1, mode='c'] probB):
@@ -317,7 +323,8 @@ def libsvm_sparse_predict_proba(
                           C, eps, p, shrinking,
                           probability, <int> class_weight.shape[0], class_weight_label.data,
                           class_weight.data, -1,
-                          -1) # random seed has no effect on predict either
+                          -1, # random seed has no effect on predict either
+                          kernel_lib_name, kernel_lib_params)
 
     model = csr_set_model(param, <int> nSV.shape[0], SV_data.data,
                           SV_indices.shape, SV_indices.data,
@@ -358,6 +365,7 @@ def libsvm_sparse_decision_function(
     eps, double C,
     np.ndarray[np.float64_t, ndim=1] class_weight,
     double nu, double p, int shrinking, int probability,
+    char*  kernel_lib_name, char*  kernel_lib_params,
     np.ndarray[np.int32_t, ndim=1, mode='c'] nSV,
     np.ndarray[np.float64_t, ndim=1, mode='c'] probA,
     np.ndarray[np.float64_t, ndim=1, mode='c'] probB):
@@ -379,7 +387,8 @@ def libsvm_sparse_decision_function(
                           100., # cache size has no effect on predict
                           C, eps, p, shrinking,
                           probability, <int> class_weight.shape[0],
-                          class_weight_label.data, class_weight.data, -1, -1)
+                          class_weight_label.data, class_weight.data, -1, -1,
+                          kernel_lib_name, kernel_lib_params)
 
     model = csr_set_model(param, <int> nSV.shape[0], SV_data.data,
                           SV_indices.shape, SV_indices.data,

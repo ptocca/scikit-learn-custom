@@ -45,7 +45,7 @@ np.import_array()
 
 ################################################################################
 # Internal variables
-LIBSVM_KERNEL_TYPES = ['linear', 'poly', 'rbf', 'sigmoid', 'precomputed']
+LIBSVM_KERNEL_TYPES = ['linear', 'poly', 'rbf', 'sigmoid', 'precomputed', 'external']
 
 
 ################################################################################
@@ -64,7 +64,9 @@ def fit(
     int shrinking=1, int probability=0,
     double cache_size=100.,
     int max_iter=-1,
-    int random_seed=0):
+    int random_seed=0,
+    char * kernel_lib_name="",
+    char * kernel_lib_params=""):
     """
     Train the model using libsvm (low-level method)
 
@@ -75,13 +77,13 @@ def fit(
     Y : array, dtype=float64, size=[n_samples]
         target vector
 
-    svm_type : {0, 1, 2, 3, 4}, optional
-        Type of SVM: C_SVC, NuSVC, OneClassSVM, EpsilonSVR or NuSVR
+    svm_type : {0, 1, 2, 3, 4, 5}, optional
+        Type of SVM: C_SVC, NuSVC, OneClassSVM, EpsilonSVR, NuSVR, C_SVC_L2
         respectively. 0 by default.
 
-    kernel : {'linear', 'rbf', 'poly', 'sigmoid', 'precomputed'}, optional
-        Kernel to use in the model: linear, polynomial, RBF, sigmoid
-        or precomputed. 'rbf' by default.
+    kernel : {'linear', 'rbf', 'poly', 'sigmoid', 'precomputed', 'external'}, optional
+        Kernel to use in the model: linear, polynomial, RBF, sigmoid, precomputed, or
+        external. 'rbf' by default.
 
     degree : int32, optional
         Degree of the polynomial kernel (only relevant if kernel is
@@ -129,6 +131,13 @@ def fit(
     random_seed : int, optional
         Seed for the random number generator used for probability estimates.
         0 by default.
+
+    kernel_lib_name : str, optional
+        File name of the shared library that implements the kernel when
+        kernel is set to 'external'.
+
+    kernel_params : str, optional
+        String containing the parameters for the external kernel. 
 
     Returns
     -------
@@ -178,7 +187,8 @@ def fit(
     set_parameter(
         &param, svm_type, kernel_index, degree, gamma, coef0, nu, cache_size,
         C, tol, epsilon, shrinking, probability, <int> class_weight.shape[0],
-        class_weight_label.data, class_weight.data, max_iter, random_seed)
+        class_weight_label.data, class_weight.data, max_iter, random_seed,
+        kernel_lib_name, kernel_lib_params)
 
     error_msg = svm_check_parameter(&problem, &param)
     if error_msg:
@@ -226,7 +236,7 @@ def fit(
     cdef np.ndarray[np.float64_t, ndim=1, mode='c'] probA
     cdef np.ndarray[np.float64_t, ndim=1, mode='c'] probB
     if probability != 0:
-        if svm_type < 2: # SVC and NuSVC
+        if svm_type < 2 or svm_type==5: # SVC and NuSVC and SVC_L2
             probA = np.empty(int(n_class*(n_class-1)/2), dtype=np.float64)
             probB = np.empty(int(n_class*(n_class-1)/2), dtype=np.float64)
             copy_probB(probB.data, model, probB.shape)
@@ -248,7 +258,8 @@ def fit(
 cdef void set_predict_params(
     svm_parameter *param, int svm_type, kernel, int degree, double gamma,
     double coef0, double cache_size, int probability, int nr_weight,
-    char *weight_label, char *weight) except *:
+    char *weight_label, char *weight, char *kernel_lib_name,
+    char *kernel_lib_params) except *:
     """Fill param with prediction time-only parameters."""
 
     # training-time only parameters
@@ -264,7 +275,8 @@ cdef void set_predict_params(
 
     set_parameter(param, svm_type, kernel_index, degree, gamma, coef0, nu,
                          cache_size, C, tol, epsilon, shrinking, probability,
-                         nr_weight, weight_label, weight, max_iter, random_seed)
+                         nr_weight, weight_label, weight, max_iter, random_seed,
+                         kernel_lib_name, kernel_lib_params)
 
 
 def predict(np.ndarray[np.float64_t, ndim=2, mode='c'] X,
@@ -281,16 +293,18 @@ def predict(np.ndarray[np.float64_t, ndim=2, mode='c'] X,
                 class_weight=np.empty(0),
             np.ndarray[np.float64_t, ndim=1, mode='c']
                 sample_weight=np.empty(0),
-            double cache_size=100.):
+            double cache_size=100.,
+            kernel_lib_name='',
+            kernel_lib_params=''):
     """
     Predict target values of X given a model (low-level method)
 
     Parameters
     ----------
     X : array-like, dtype=float, size=[n_samples, n_features]
-    svm_type : {0, 1, 2, 3, 4}
-        Type of SVM: C SVC, nu SVC, one class, epsilon SVR, nu SVR
-    kernel : {'linear', 'rbf', 'poly', 'sigmoid', 'precomputed'}
+    svm_type : {0, 1, 2, 3, 4, 5}
+        Type of SVM: C SVC, nu SVC, one class, epsilon SVR, nu SVR, C_SVC_L2
+    kernel : {'linear', 'rbf', 'poly', 'sigmoid', 'precomputed', 'external'}
         Type of kernel.
     degree : int
         Degree of the polynomial kernel.
@@ -299,6 +313,13 @@ def predict(np.ndarray[np.float64_t, ndim=2, mode='c'] X,
         kernels. 0.1 by default.
     coef0 : float
         Independent parameter in poly/sigmoid kernel.
+
+    kernel_lib_name : str, optional
+        File name of the shared library that implements the kernel when
+        kernel is set to 'external'.
+
+    kernel_params : str, optional
+        String containing the parameters for the external kernel. 
 
     Returns
     -------
@@ -315,7 +336,8 @@ def predict(np.ndarray[np.float64_t, ndim=2, mode='c'] X,
 
     set_predict_params(&param, svm_type, kernel, degree, gamma, coef0,
                        cache_size, 0, <int>class_weight.shape[0],
-                       class_weight_label.data, class_weight.data)
+                       class_weight_label.data, class_weight.data,
+                       kernel_lib_name,kernel_lib_params)
     model = set_model(&param, <int> nSV.shape[0], SV.data, SV.shape,
                       support.data, support.shape, sv_coef.strides,
                       sv_coef.data, intercept.data, nSV.data, probA.data, probB.data)
@@ -348,7 +370,9 @@ def predict_proba(
         class_weight=np.empty(0),
     np.ndarray[np.float64_t, ndim=1, mode='c']
         sample_weight=np.empty(0),
-    double cache_size=100.):
+    double cache_size=100.,
+    kernel_lib_name='',
+    kernel_lib_params=''):
     """
     Predict probabilities
 
@@ -381,7 +405,8 @@ def predict_proba(
 
     set_predict_params(&param, svm_type, kernel, degree, gamma, coef0,
                        cache_size, 1, <int>class_weight.shape[0],
-                       class_weight_label.data, class_weight.data)
+                       class_weight_label.data, class_weight.data,
+                       kernel_lib_name,kernel_lib_params)
     model = set_model(&param, <int> nSV.shape[0], SV.data, SV.shape,
                       support.data, support.shape, sv_coef.strides,
                       sv_coef.data, intercept.data, nSV.data,
@@ -415,7 +440,9 @@ def decision_function(
         class_weight=np.empty(0),
     np.ndarray[np.float64_t, ndim=1, mode='c']
          sample_weight=np.empty(0),
-    double cache_size=100.):
+    double cache_size=100.,
+    kernel_lib_name='',
+    kernel_lib_params=''):
     """
     Predict margin (libsvm name for this is predict_values)
 
@@ -434,7 +461,8 @@ def decision_function(
 
     set_predict_params(&param, svm_type, kernel, degree, gamma, coef0,
                        cache_size, 0, <int>class_weight.shape[0],
-                       class_weight_label.data, class_weight.data)
+                       class_weight_label.data, class_weight.data,
+                       kernel_lib_name,kernel_lib_params)
 
     model = set_model(&param, <int> nSV.shape[0], SV.data, SV.shape,
                       support.data, support.shape, sv_coef.strides,
@@ -471,7 +499,9 @@ def cross_validation(
         sample_weight=np.empty(0),
     int shrinking=0, int probability=0, double cache_size=100.,
     int max_iter=-1,
-    int random_seed=0):
+    int random_seed=0,
+    kernel_lib_name='',
+    kernel_lib_params=''):
     """
     Binding of the cross-validation routine (low-level routine)
 
@@ -483,8 +513,8 @@ def cross_validation(
     Y : array, dtype=float, size=[n_samples]
         target vector
 
-    svm_type : {0, 1, 2, 3, 4}
-        Type of SVM: C SVC, nu SVC, one class, epsilon SVR, nu SVR
+    svm_type : {0, 1, 2, 3, 4, 5}
+        Type of SVM: C SVC, nu SVC, one class, epsilon SVR, nu SVR, C_SVC_L2
 
     kernel : {'linear', 'rbf', 'poly', 'sigmoid', 'precomputed'}
         Kernel to use in the model: linear, polynomial, RBF, sigmoid
@@ -514,6 +544,13 @@ def cross_validation(
     random_seed : int, optional
         Seed for the random number generator used for probability estimates.
         0 by default.
+
+    kernel_lib_name : str, optional
+        File name of the shared library that implements the kernel when
+        kernel is set to 'external'.
+
+    kernel_params : str, optional
+        String containing the parameters for the external kernel. 
 
     Returns
     -------
@@ -553,7 +590,8 @@ def cross_validation(
         &param, svm_type, kernel_index, degree, gamma, coef0, nu, cache_size,
         C, tol, tol, shrinking, probability, <int>
         class_weight.shape[0], class_weight_label.data,
-        class_weight.data, max_iter, random_seed)
+        class_weight.data, max_iter, random_seed,
+        kernel_lib_name,kernel_lib_params)
 
     error_msg = svm_check_parameter(&problem, &param);
     if error_msg:

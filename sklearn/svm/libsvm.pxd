@@ -26,6 +26,8 @@ cdef extern from "svm.h":
         int probability # do probability estimates
         int max_iter  # ceiling on Solver runtime
         int random_seed  # seed for random generator in probability estimation
+        char *kernel_lib_name   # name of the shared library for the external kernel
+        char *kernel_lib_params  # string passed to the external kernel at init
 
     cdef struct svm_problem:
         int l
@@ -45,7 +47,8 @@ cdef extern from "libsvm_helper.c":
     void set_parameter (svm_parameter *, int , int , int , double, double ,
                                   double , double , double , double,
                                   double, int, int, int, char *, char *, int,
-                                  int)
+                                  int,
+                                  char *, char *)
     void set_problem (svm_problem *, char *, char *, char *, np.npy_intp *, int)
 
     svm_model *set_model (svm_parameter *, int, char *, np.npy_intp *,

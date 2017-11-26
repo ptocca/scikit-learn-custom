@@ -39,8 +39,8 @@ struct svm_csr_problem
 };
 
 
-enum { C_SVC, NU_SVC, ONE_CLASS, EPSILON_SVR, NU_SVR };	/* svm_type */
-enum { LINEAR, POLY, RBF, SIGMOID, PRECOMPUTED }; /* kernel_type */
+enum { C_SVC, NU_SVC, ONE_CLASS, EPSILON_SVR, NU_SVR , C_SVC_L2, ONE_CLASS_L2};	/* svm_type */  /* ONE_CLASS_L2 in progress*/
+enum { LINEAR, POLY, RBF, SIGMOID, PRECOMPUTED , EXTERNAL}; /* kernel_type */
 
 struct svm_parameter
 {
@@ -63,6 +63,8 @@ struct svm_parameter
 	int probability; /* do probability estimates */
 	int max_iter; /* ceiling on Solver runtime */
     int random_seed; /* seed for random number generator */
+	char *kernelLibName;  /* for kernels defined via external dynamic library */
+	char *kernelLibParams;  /* for kernels defined via external dynamic library */
 };
 
 //
