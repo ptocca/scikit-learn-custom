@@ -254,7 +254,7 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
                 cache_size=self.cache_size, coef0=self.coef0,
                 gamma=self._gamma, epsilon=self.epsilon,
                 max_iter=self.max_iter, random_seed=random_seed,
-                kernel_lib_name=self.kernel_lib_name, kernel_lib_params=self.kernel_lib_params)
+                kernel_lib_name=self.kernel_lib_name.encode(), kernel_lib_params=self.kernel_lib_params.encode())
 
         self._warn_from_fit_status()
 
@@ -415,7 +415,8 @@ class BaseLibSVM(six.with_metaclass(ABCMeta, BaseEstimator)):
             self.probA_, self.probB_,
             svm_type=LIBSVM_IMPL.index(self._impl),
             kernel=kernel, degree=self.degree, cache_size=self.cache_size,
-            coef0=self.coef0, gamma=self._gamma)
+            coef0=self.coef0, gamma=self._gamma,
+            kernel_lib_name=self.kernel_lib_name.encode(),kernel_lib_params=self.kernel_lib_params.encode())
 
     def _sparse_decision_function(self, X):
         X.data = np.asarray(X.data, dtype=np.float64, order='C')
@@ -655,7 +656,8 @@ class BaseSVC(six.with_metaclass(ABCMeta, BaseLibSVM, ClassifierMixin)):
             self._dual_coef_, self._intercept_,
             self.probA_, self.probB_,
             svm_type=svm_type, kernel=kernel, degree=self.degree,
-            cache_size=self.cache_size, coef0=self.coef0, gamma=self._gamma)
+            cache_size=self.cache_size, coef0=self.coef0, gamma=self._gamma,
+            kernel_lib_name=self.kernel_lib_name.encode(),kernel_lib_params=self.kernel_lib_params.encode())
 
         return pprob
 
@@ -678,7 +680,9 @@ class BaseSVC(six.with_metaclass(ABCMeta, BaseLibSVM, ClassifierMixin)):
             self.degree, self._gamma, self.coef0, self.tol,
             self.C, self.class_weight_,
             self.nu, self.epsilon, self.shrinking,
-            self.probability, self.n_support_,
+            self.probability,
+            self.kernel_lib_name.encode(),self.kernel_lib_params.encode(),
+            self.n_support_,
             self.probA_, self.probB_)
 
     def _get_coef(self):
